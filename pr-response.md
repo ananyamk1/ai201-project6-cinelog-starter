@@ -9,8 +9,11 @@
 **How I verified:** I ran a project-wide search (`grep -rn "save_to_watchlist" --include='*.py'`) before and after the change. Before, it matched three places: the function definition, the import in the route, and the call in the route. After the rename, the same search returns zero matches, confirming no call site was missed. The full test suite (`pytest tests/ -v`) still passes (4 passed).
 
 ## Comment 2 — Deduplication
-**What I did:**
-**How I verified:**
+**What I did:** Added a deduplication check to `add_to_watchlist()`, following the same pattern as `add_to_collection()` in `services/collection_service.py`. After confirming the film exists, the function now queries `WatchlistEntry` for an existing row with the same `user_id`/`film_id`; if one exists it raises `AlreadyInWatchlistError` instead of inserting a duplicate. I added the new `AlreadyInWatchlistError` exception class to mirror the collection service's `AlreadyInCollectionError`.
+
+**Understanding the model function:** In `add_to_collection()`, the check is `CollectionEntry.query.filter_by(user_id=user_id, film_id=film_id).first()`. `.first()` returns the existing entry object if a duplicate exists, or `None` if not. When a duplicate is detected, the function raises `AlreadyInCollectionError` and never reaches the insert — so no second row is written.
+
+**How I verified:** I ran a manual check in an app context: added a film, then added the same `(user_id, film_id)` again. The second call raised `AlreadyInWatchlistError`, and a `WatchlistEntry.query...count()` confirmed exactly one row exists (the duplicate was not inserted). The full test suite still passes.
 
 ## Comment 3 — Missing test
 **What I did:**
