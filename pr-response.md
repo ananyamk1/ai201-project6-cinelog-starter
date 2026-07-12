@@ -1,7 +1,12 @@
 # PR Response Doc — CineLog Watchlist Feature
 
 ## AI Usage
-<!-- Fill in at the end — how you used AI tools during this project -->
+I used AI to orient in the codebase (summarizing `models.py`, `collection_service.py`, and `test_collection.py`) and to stress-test my Comment 4 and 5 arguments as a devil's advocate — I asked what counterargument a careful reviewer would raise and what tradeoff I wasn't acknowledging.
+
+- **Comment 4:** The counterargument surfaced was that watchlists are lower-sensitivity than collections (future intent vs. viewing history), and that private-by-default can starve a young social platform of the public content its discovery features depend on. That was partly a gap in my draft, so I revised: I explicitly acknowledged the social-discovery tradeoff and added the "nudge users to opt in" middle path rather than treating public-default as simply wrong.
+- **Comment 5:** The counterargument was alphabetical's stability/findability for large lists. I had already addressed the core of it (search/filter + a future `?sort=` param), so I kept my position but tightened the "browsed vs. looked-up" framing.
+
+All final reasoning is my own, grounded in CineLog's context; AI was used to pressure-test, not to author the arguments.
 
 ## Comment 1 — Rename
 **What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py`, matching the `add_to_collection()` naming used in the collection service. Updated the one call site in `routes/watchlist/watchlist.py` — both the `import` line and the call inside the `add_film` route handler.
@@ -21,14 +26,21 @@
 **How I verified:** `pytest tests/test_watchlist.py -v` passes the new test, and `pytest tests/ -v` runs green across all 5 tests (4 collection + 1 watchlist). The test confirms `add_to_watchlist()` raises `FilmNotFoundError` for an unknown film id rather than a database integrity error.
 
 ## Comment 4 — Default visibility
-**My position:**
-**Reasoning:**
-**Tradeoff acknowledged:**
+**My position:** Change the default from `public=True` to `public=False` — watchlists should be private by default, with sharing an explicit opt-in.
+
+**Reasoning:** A watchlist is a statement of *future intent* — films a user has decided they want to watch but hasn't yet. That is arguably more revealing than the collection (a record of what you've already watched): it can signal current mood, interests, or plans a user hasn't acted on. Defaulting `public=True` silently opts every new entry into being visible to others, which violates the principle of least surprise — a user adding a film to "save it for later" is not thinking "I am now broadcasting this." I'm optimizing for **user trust and control**: the safe default is the one that can't cause a privacy regret. A user who wants visibility can flip a toggle at any time; a user who didn't realize their watchlist was public can't un-share what was already seen. This is privacy-by-design applied to CineLog specifically.
+
+**Tradeoff acknowledged:** `public=True` optimizes for the opposite goal — social discovery and network effects. CineLog is a social film-logging platform (Letterboxd-style), and public watchlists are exactly the content that powers feeds, "what your friends want to watch," and recommendation surfaces. Private-by-default starves those features of seed content and can make a young platform feel empty. A reasonable middle path that keeps my position: default to private, but actively *nudge* users to make watchlists public (an onboarding prompt or a one-tap "share your watchlist" CTA) — so discovery is driven by informed consent rather than an invisible default.
+
+## Comment 4 — Default visibility (implementation status)
+Per the milestone, Comment 4 is a written design conversation, so I have not changed the `public=True` default in code as part of this PR — the argument above is my recommendation for a follow-up. Flagging explicitly so the maintainer can decide whether to fold the default flip into this PR or track it separately.
 
 ## Comment 5 — Sort order
-**My position:**
-**Reasoning:**
-**Engagement with reviewer's point:**
+**My position:** I agree with the maintainer and switched `get_watchlist()` from alphabetical (`Film.title.asc()`) to date-added, newest first (`WatchlistEntry.date_added.desc()`).
+
+**Reasoning:** A watchlist is a *backlog / queue*, not a reference index. The question a user asks it is "what do I want to watch next?" — and for that, recency of intent is the most relevant signal: the film you just added is the one that's top-of-mind. Newest-first surfaces it immediately instead of burying it under everything from "A". It also makes the two list views in CineLog behave consistently: `get_collection()` already sorts `date_added` descending, so a user learns one mental model ("most recent first") that applies to both their collection and their watchlist.
+
+**Engagement with reviewer's point:** Alphabetical wasn't arbitrary — its strength is determinism and findability: the order is stable across reloads, and if you know a title you can scan to it. I don't think that outweighs recency for the *default*, because findability-by-title is better served by explicit search/filter than by the default sort, and a watchlist is browsed ("what's next") more than it's looked-up ("where is film X"). The right long-term answer is to make sort a query parameter (`?sort=title|date_added`) so alphabetical stays available for users who prefer it — but the sensible default is date-added, matching the maintainer's preference and the rest of the app.
 
 ## Comment 6 — Rebase
 **What conflicted:**
