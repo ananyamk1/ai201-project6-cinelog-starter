@@ -43,9 +43,18 @@ Per the milestone, Comment 4 is a written design conversation, so I have not cha
 **Engagement with reviewer's point:** Alphabetical wasn't arbitrary — its strength is determinism and findability: the order is stable across reloads, and if you know a title you can scan to it. I don't think that outweighs recency for the *default*, because findability-by-title is better served by explicit search/filter than by the default sort, and a watchlist is browsed ("what's next") more than it's looked-up ("where is film X"). The right long-term answer is to make sort a query parameter (`?sort=title|date_added`) so alphabetical stays available for users who prefer it — but the sensible default is date-added, matching the maintainer's preference and the rest of the app.
 
 ## Comment 6 — Rebase
-**What conflicted:**
+**What conflicted:** I ran `git fetch origin` and `git rebase origin/main`. Two things had to be reconciled:
+1. **`pr-response.md` (add/add conflict):** `main` had added an empty template of this file and my branch had added a filled-in version, so git couldn't auto-merge. This was a textual conflict with `<<<<<<<`/`>>>>>>>` markers.
+2. **The UUID migration (`models.py` + watchlist code):** `main` migrated film IDs from integer to UUID — `Film.id` and `CollectionEntry.film_id` became `db.String(36)`. My branch was written against the old integer schema. This was the substantive conflict the review comment was about. Notably, git did *not* leave conflict markers for it: main's refactor commit had deleted the region after `CollectionEntry`, so the 3-way merge silently dropped my `WatchlistEntry` class (which lived there) and kept my integer-based watchlist code — a semantic conflict, not a textual one.
+
 **How I resolved it:**
+- For `pr-response.md`, I took my branch's version (`git checkout --theirs`), since the later commits re-apply their own sections on top during the replay.
+- For the UUID migration, I re-added the `WatchlistEntry` model that the merge had dropped, this time with `film_id = db.Column(db.String(36), db.ForeignKey("film.id"))` to match the post-refactor `CollectionEntry`. I also updated the now-stale integer references in the watchlist docstrings (`services/watchlist_service.py` "film_id (int)" → "film_id (str): UUID"; the route body doc `<int>` → `<str UUID>`). The service already used `db.session.get(Film, film_id)`, which works unchanged with UUID string keys.
+
 **How I verified no conflict remains:**
+- `grep -n "WatchlistEntry" models.py` confirms the model is back with a `String(36)` `film_id`, and no `db.Integer` film-id references remain in the watchlist code.
+- `pytest tests/ -v` passes all 5 tests, and I ran a manual end-to-end check: created a `Film` (whose `id` is now a UUID string), added it via `add_to_watchlist()`, confirmed the stored `film_id` matched the UUID, and confirmed a duplicate add raises `AlreadyInWatchlistError`.
+- `git log --merges origin/main..HEAD` returns nothing and `git log --oneline origin/main..HEAD` shows a linear stack of my six commits on top of `origin/main` — confirming the rebase produced no merge commits.
 
 ## PR Description
 <!-- Written at the end — feature overview, design decisions, manual testing steps -->
