@@ -16,8 +16,9 @@
 **How I verified:** I ran a manual check in an app context: added a film, then added the same `(user_id, film_id)` again. The second call raised `AlreadyInWatchlistError`, and a `WatchlistEntry.query...count()` confirmed exactly one row exists (the duplicate was not inserted). The full test suite still passes.
 
 ## Comment 3 — Missing test
-**What I did:**
-**How I verified:**
+**What I did:** Created `tests/test_watchlist.py`. I used `test_add_to_collection_nonexistent_film_raises` in `tests/test_collection.py` as my model and wrote the equivalent `test_add_to_watchlist_nonexistent_film_raises`. I copied the same fixture structure (`app` with an in-memory SQLite DB, `sample_user`, `sample_film`) and the same assertion structure: a `pytest.raises(FilmNotFoundError)` block around a call with a nonexistent film id.
+
+**How I verified:** `pytest tests/test_watchlist.py -v` passes the new test, and `pytest tests/ -v` runs green across all 5 tests (4 collection + 1 watchlist). The test confirms `add_to_watchlist()` raises `FilmNotFoundError` for an unknown film id rather than a database integrity error.
 
 ## Comment 4 — Default visibility
 **My position:**
