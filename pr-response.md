@@ -6,7 +6,21 @@ I used AI to orient in the codebase (summarizing `models.py`, `collection_servic
 - **Comment 4:** The counterargument surfaced was that watchlists are lower-sensitivity than collections (future intent vs. viewing history), and that private-by-default can starve a young social platform of the public content its discovery features depend on. That was partly a gap in my draft, so I revised: I explicitly acknowledged the social-discovery tradeoff and added the "nudge users to opt in" middle path rather than treating public-default as simply wrong.
 - **Comment 5:** The counterargument was alphabetical's stability/findability for large lists. I had already addressed the core of it (search/filter + a future `?sort=` param), so I kept my position but tightened the "browsed vs. looked-up" framing.
 
+I also used AI as a final check on my commit history — I pasted `git log --oneline` and asked whether the messages followed conventional-commit format and whether any commit bundled multiple logical changes. I then verified the messages myself against the Conventional Commits spec before finalizing.
+
 All final reasoning is my own, grounded in CineLog's context; AI was used to pressure-test, not to author the arguments.
+
+## Commit history (`git log --oneline origin/main..HEAD`)
+```
+c7648aa fix: restore WatchlistEntry film_id as UUID after main rebase
+76bf268 feat: sort watchlist by date added instead of alphabetically
+8b573d0 test: add test for nonexistent film in add_to_watchlist
+f2ee958 fix: add deduplication check to prevent duplicate watchlist entries
+c801717 fix: rename save_to_watchlist to add_to_watchlist per naming convention
+a88f1a5 fix: use db.session.get for film retrieval in collection and watchlist services
+ca1deb9 feat: add watchlist model and add_to_watchlist endpoint
+```
+Seven conventional commits (`feat:`/`fix:`/`test:`), each one logical change, linear on top of `main` with no merge commits.
 
 ## Comment 1 — Rename
 **What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py`, matching the `add_to_collection()` naming used in the collection service. Updated the one call site in `routes/watchlist/watchlist.py` — both the `import` line and the call inside the `add_film` route handler.
@@ -57,4 +71,23 @@ Per the milestone, Comment 4 is a written design conversation, so I have not cha
 - `git log --merges origin/main..HEAD` returns nothing and `git log --oneline origin/main..HEAD` shows a linear stack of my six commits on top of `origin/main` — confirming the rebase produced no merge commits.
 
 ## PR Description
-<!-- Written at the end — feature overview, design decisions, manual testing steps -->
+
+### What this feature does
+Adds a **watchlist** to CineLog — a per-user list of films a user wants to watch later (distinct from the collection, which is films already watched). It adds a `WatchlistEntry` model and two endpoints:
+- `POST /watchlist/<user_id>/add` with body `{ "film_id": "<uuid>" }` — adds a film to the user's watchlist.
+- `GET /watchlist/<user_id>` — returns the user's watchlist.
+
+`add_to_watchlist()` validates that the film exists (raising `FilmNotFoundError` otherwise) and de-duplicates: adding the same film twice raises `AlreadyInWatchlistError` instead of creating a second row.
+
+### Design decisions
+1. **Default visibility — recommend private (`public=False`).** A watchlist signals future intent and is arguably more revealing than viewing history, so the safe default is one that can't cause a privacy regret; sharing should be an explicit opt-in. I acknowledge the tradeoff: public-by-default fuels social discovery/feeds, which matters for a social film platform — so the recommended middle path is private-by-default plus an explicit "share your watchlist" nudge. (The code currently ships the original `public=True`; the default flip is flagged as a follow-up in Comment 4.)
+2. **Sort order — date added, newest first.** A watchlist is a backlog answering "what do I want to watch next?", so recency of intent beats alphabetical, and it matches `get_collection()`'s ordering for a consistent mental model. Alphabetical's findability is better served by explicit search/a future `?sort=` param than by the default sort.
+
+### How to manually test
+1. Install deps and run the app: `pip install -r requirements.txt` then `flask run` (or `python app.py`).
+2. Create a user and a film (via the existing endpoints / a DB seed) and note their UUIDs.
+3. **Add:** `POST /watchlist/<user_id>/add` with `{ "film_id": "<film_uuid>" }` → expect `201` and the entry JSON.
+4. **Dedup:** repeat the same POST → expect an error (film already on watchlist), and the watchlist still contains one copy.
+5. **Not found:** POST with a random UUID that isn't a real film → expect a "film not found" error, not a DB integrity error.
+6. **View / sort:** add a second film, then `GET /watchlist/<user_id>` → expect both films with the most-recently-added first.
+7. **Automated:** `pytest tests/ -v` → all tests pass (includes `test_add_to_watchlist_nonexistent_film_raises`).
