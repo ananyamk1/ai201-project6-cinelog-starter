@@ -12,15 +12,20 @@ All final reasoning is my own, grounded in CineLog's context; AI was used to pre
 
 ## Commit history (`git log --oneline origin/main..HEAD`)
 ```
-c7648aa fix: restore WatchlistEntry film_id as UUID after main rebase
-76bf268 feat: sort watchlist by date added instead of alphabetically
-8b573d0 test: add test for nonexistent film in add_to_watchlist
-f2ee958 fix: add deduplication check to prevent duplicate watchlist entries
-c801717 fix: rename save_to_watchlist to add_to_watchlist per naming convention
-a88f1a5 fix: use db.session.get for film retrieval in collection and watchlist services
-ca1deb9 feat: add watchlist model and add_to_watchlist endpoint
+docs: document stretch features in pr-response
+test: add tests for remove_from_watchlist and visibility toggle
+feat: add watchlist visibility toggle endpoint
+feat: add remove_from_watchlist endpoint
+docs: finalize pr-response with PR description and commit-history log
+fix: restore WatchlistEntry film_id as UUID after main rebase
+feat: sort watchlist by date added instead of alphabetically
+test: add test for nonexistent film in add_to_watchlist
+fix: add deduplication check to prevent duplicate watchlist entries
+fix: rename save_to_watchlist to add_to_watchlist per naming convention
+fix: use db.session.get for film retrieval in collection and watchlist services
+feat: add watchlist model and add_to_watchlist endpoint
 ```
-Seven conventional commits (`feat:`/`fix:`/`test:`), each one logical change, linear on top of `main` with no merge commits.
+All conventional commits (`feat:`/`fix:`/`test:`/`docs:`), each one logical change, linear on top of `main` with no merge commits. (The required six-comment work is the bottom seven commits; the top four add the stretch features and this documentation.)
 
 ## Comment 1 — Rename
 **What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py`, matching the `add_to_collection()` naming used in the collection service. Updated the one call site in `routes/watchlist/watchlist.py` — both the `import` line and the call inside the `add_film` route handler.
@@ -91,3 +96,14 @@ Adds a **watchlist** to CineLog — a per-user list of films a user wants to wat
 5. **Not found:** POST with a random UUID that isn't a real film → expect a "film not found" error, not a DB integrity error.
 6. **View / sort:** add a second film, then `GET /watchlist/<user_id>` → expect both films with the most-recently-added first.
 7. **Automated:** `pytest tests/ -v` → all tests pass (includes `test_add_to_watchlist_nonexistent_film_raises`).
+
+## Stretch features
+
+### Stretch 1 — `remove_from_watchlist()`
+**What I did:** Added `remove_from_watchlist(user_id, film_id)` to `services/watchlist_service.py`, following the existing `remove_from_collection()` pattern in the collection service. It looks up the `WatchlistEntry` by `user_id`/`film_id`; **if the film isn't on the watchlist it raises `NotInWatchlistError`** (a new exception mirroring `NotInCollectionError`) rather than silently succeeding; otherwise it deletes the entry and returns `True`. Exposed via `DELETE /watchlist/<user_id>/remove` (body `{ "film_id": "<uuid>" }`), which maps the error to a `404`, matching the collection route. **Test:** `test_remove_from_watchlist_not_present_raises` in `tests/test_watchlist.py` asserts the not-present case raises `NotInWatchlistError`. Commit: `feat: add remove_from_watchlist endpoint`.
+
+### Stretch 2 — Second test
+Beyond the Comment 3 test, I added two more tests in the `test: add tests for remove_from_watchlist and visibility toggle` commit. The notable added edge case is `test_remove_from_watchlist_not_present_raises`: I chose the "remove something that was never added" case because it's the boundary where a naive implementation would silently no-op (or throw a low-level error) instead of giving the caller a clear domain error — exactly the failure mode `NotInWatchlistError` exists to prevent. The second added test, `test_set_watchlist_visibility_updates_flag`, covers the toggle below.
+
+### Stretch 3 — Visibility toggle endpoint
+**What I did:** Added `set_watchlist_visibility(user_id, film_id, public)` and exposed it via `PATCH /watchlist/<user_id>/visibility` (body `{ "film_id": "<uuid>", "public": true|false }`). **How `public` works:** each `WatchlistEntry` has a boolean `public` column that **defaults to `True`** (an entry is public when created); this endpoint lets a caller flip it — e.g. `PATCH` with `{"public": false}` makes that entry private, `{"public": true}` makes it public again. It raises `NotInWatchlistError` (→ `404`) if the film isn't on the user's watchlist. This is the concrete "user can flip a toggle at any time" mechanism referenced in my Comment 4 argument. **Test:** `test_set_watchlist_visibility_updates_flag` confirms an entry starts `public=True` and becomes `public=False` after the call. Commit: `feat: add watchlist visibility toggle endpoint`.
